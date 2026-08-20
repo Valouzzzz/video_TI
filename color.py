@@ -3,7 +3,6 @@ import math
 
 video = cv2.VideoCapture("video_144p.mp4")
 
-# Couleurs de référence en RGB
 couleurs = {
     "BLUE":    (0, 0, 255),
     "RED":     (255, 0, 0),
@@ -23,7 +22,6 @@ couleurs = {
 }
 
 
-# Trouve la couleur la plus proche
 def couleur_proche(r, g, b):
 
     meilleure_couleur = None
@@ -58,10 +56,8 @@ while True:
     for ligne in range(120):
         for colonne in range(166):
 
-            # OpenCV donne BGR
             bleu, vert, rouge = frame[ligne, colonne]
 
-            # Conversion en RGB
             couleur = couleur_proche(
                 int(rouge),
                 int(vert),
@@ -81,3 +77,20 @@ print("Nombre de pixels par image :", len(frames[0]))
 print("Premier pixel :", frames[0][0])
 print("Dernier pixel :", frames[0][-1])
 
+def tri_frames(liste):
+    compteur = 0
+    liste_final = []
+    liste_final.append(liste[0].copy())
+    for image in range(1, len(liste)):
+        nouvelle_image = []
+        for pixel in range(len(liste[image])):
+            if liste[image][pixel] == liste[image-1][pixel]:
+                nouvelle_image.append("O")
+                compteur += 1
+            else:
+                nouvelle_image.append(liste[image][pixel])
+        liste_final.append(nouvelle_image)
+    print("nombre de pixels qui ne vont pas être chargés : " + str(compteur))
+    return liste_final
+
+frames = tri_frames(frames)
