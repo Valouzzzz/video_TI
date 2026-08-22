@@ -6,3 +6,5 @@ And to create your own video: run "main.py" with your video file (preferably in 
 
 
 Enjoy watching! ; )
+
+Thanks to ThomasNca for the help with the project. (https://github.com/ThomasNca)
