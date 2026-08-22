@@ -1,1 +1,3 @@
-Mettre sur la calculatrice tout les fichier qui sont sur "fichier_transfer" puis lancer dans [prgm] "*A" et sélectionner "Cesium" puis aller dans [apps] pour ouvrir "PLAYER"
+# Video player for Ti 83 Premium CE :
+
+To launch the videos: transfer all files from "transfer_file" to the calculator, then run "*A" from the [prgm] menu and select "Cesium"; finally, go to the [apps] menu and open "PLAYER".
