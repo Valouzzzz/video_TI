@@ -1,13 +1,22 @@
 import cv2
-import math
+import struct
 
-VIDEO = "video_144p.mp4"
+from tivars.types import TIProgram, TIAppVar
+from tivars.models import TI_83PCE
+
+
+VIDEO = "gif_shrek_144p.mp4"
+
+FICHIER_PROGRAMME = "VIDEO.8xp"
+FICHIER_APPVAR = "VIDEO.8xv"
 
 LARGEUR = 166
 HAUTEUR = 120
 
-OFFSET_X = (320 - LARGEUR) // 2
-OFFSET_Y = (240 - HAUTEUR) // 2
+NB_PIXELS = LARGEUR * HAUTEUR
+
+MAX_APPVAR = 65535
+
 
 couleurs = {
     "BLUE":     (0, 0, 255),
@@ -27,32 +36,14 @@ couleurs = {
     "DARKGRAY": (48, 48, 48)
 }
 
-
-# Chaque couleur possède un numéro
-couleur_id = {
-    "BLUE": 0,
-    "RED": 1,
-    "BLACK": 2,
-    "MAGENTA": 3,
-    "GREEN": 4,
-    "ORANGE": 5,
-    "BROWN": 6,
-    "NAVY": 7,
-    "LTBLUE": 8,
-    "YELLOW": 9,
-    "WHITE": 10,
-    "LTGRAY": 11,
-    "MEDGRAY": 12,
-    "GRAY": 13,
-    "DARKGRAY": 14
-}
+palette = list(couleurs.values())
 
 def couleur_proche(r, g, b):
 
-    meilleure_couleur = None
+    meilleure_id = 0
     meilleure_distance = float("inf")
 
-    for nom, (cr, cg, cb) in couleurs.items():
+    for i, (cr, cg, cb) in enumerate(palette):
 
         distance = (
             (r - cr) ** 2 +
@@ -61,16 +52,19 @@ def couleur_proche(r, g, b):
         )
 
         if distance < meilleure_distance:
-            meilleure_distance = distance
-            meilleure_couleur = nom
 
-    return meilleure_couleur
+            meilleure_distance = distance
+            meilleure_id = i
+
+    return meilleure_id
+
+print("Lecture de la vidéo...")
 
 video = cv2.VideoCapture(VIDEO)
 
 frames = []
 
-numero_frame = 0
+numero = 0
 
 while True:
 
@@ -87,156 +81,309 @@ while True:
 
     image = []
 
-    for ligne in range(HAUTEUR):
+    for y in range(HAUTEUR):
 
-        for colonne in range(LARGEUR):
+        for x in range(LARGEUR):
 
-            bleu, vert, rouge = frame[ligne, colonne]
+            b, g, r = frame[y, x]
 
             couleur = couleur_proche(
-                int(rouge),
-                int(vert),
-                int(bleu)
+                int(r),
+                int(g),
+                int(b)
             )
 
             image.append(couleur)
 
     frames.append(image)
 
-    numero_frame += 1
+    numero += 1
 
-    if numero_frame % 10 == 0:
-        print("Frame :", numero_frame)
+    print(
+        f"Frame {numero} terminée"
+    )
 
 
 video.release()
 
+
+if len(frames) == 0:
+
+    print("ERREUR : aucune frame trouvée.")
+
+    exit()
+
+
 print()
-print("Nombre de frames :", len(frames))
-print("Pixels par frame :", LARGEUR * HAUTEUR)
+print("================================")
+print("VIDEO")
+print("================================")
+print("Frames :", len(frames))
+print("Pixels/frame :", NB_PIXELS)
+print("================================")
 
-changements = []
+def encoder_premiere_frame(frame):
 
-premiere_image = []
+    """
+    2 pixels par octet.
 
-for pixel in range(len(frames[0])):
+    Chaque couleur est comprise entre 0 et 14.
+    Elle tient donc sur 4 bits.
+    """
 
-    couleur = frames[0][pixel]
+    resultat = bytearray()
 
-    position = pixel
-    couleur_num = couleur_id[couleur]
+    for i in range(0, len(frame), 2):
 
-    premiere_image.append(
-        (position, couleur_num)
-    )
+        pixel1 = frame[i]
 
-changements.append(premiere_image)
+        if i + 1 < len(frame):
+            pixel2 = frame[i + 1]
+        else:
+            pixel2 = 0
 
+        octet = (
+            (pixel1 << 4)
+            |
+            pixel2
+        )
 
-for i in range(1, len(frames)):
+        resultat.append(octet)
 
-    frame_changements = []
+    return resultat
 
-    ancienne = frames[i - 1]
-    nouvelle = frames[i]
+def encoder_changements(ancienne, nouvelle):
 
-    for pixel in range(len(nouvelle)):
+    """
+    Encode les pixels modifiés.
 
-        if nouvelle[pixel] != ancienne[pixel]:
+    Format :
 
-            position = pixel
-            couleur_num = couleur_id[nouvelle[pixel]]
+    position : 2 octets
+    couleur  : 1 octet
 
-            frame_changements.append(
-                (position, couleur_num)
+    On utilise ensuite un RLE simple lorsque plusieurs
+    pixels consécutifs ont la même couleur.
+    """
+
+    resultat = bytearray()
+
+    i = 0
+
+    while i < len(nouvelle):
+
+        if nouvelle[i] == ancienne[i]:
+
+            i += 1
+            continue
+
+        couleur = nouvelle[i]
+
+        debut = i
+        longueur = 1
+
+        while (
+            i + longueur < len(nouvelle)
+            and
+            nouvelle[i + longueur] == couleur
+            and
+            nouvelle[i + longueur] != ancienne[i + longueur]
+        ):
+
+            longueur += 1
+
+        if longueur == 1:
+
+            resultat.append(0)
+
+            resultat += struct.pack(
+                "<H",
+                debut
             )
 
-    changements.append(frame_changements)
+            resultat.append(
+                couleur
+            )
+
+        else:
+
+            resultat.append(1)
+
+            resultat += struct.pack(
+                "<H",
+                debut
+            )
+
+            resultat += struct.pack(
+                "<H",
+                longueur
+            )
+
+            resultat.append(
+                couleur
+            )
+
+        i += longueur
+
+    return resultat
+
+print()
+print("Compression...")
+
+
+donnees = bytearray()
+
+donnees += b"VID1"
+
+donnees += struct.pack(
+    "<H",
+    LARGEUR
+)
+
+donnees += struct.pack(
+    "<H",
+    HAUTEUR
+)
+
+donnees += struct.pack(
+    "<H",
+    len(frames)
+)
+
+premiere = encoder_premiere_frame(
+    frames[0]
+)
+
+donnees += struct.pack(
+    "<I",
+    len(premiere)
+)
+
+donnees += premiere
+
+
+print(
+    "Frame 0 :",
+    len(premiere),
+    "octets"
+)
+
+ancienne = frames[0]
+
+
+for numero in range(1, len(frames)):
+
+    nouvelle = frames[numero]
+
+    changements = encoder_changements(
+        ancienne,
+        nouvelle
+    )
+
+    donnees += struct.pack(
+        "<I",
+        len(changements)
+    )
+
+    donnees += changements
 
     print(
         "Frame",
-        i,
+        numero,
         ":",
-        len(frame_changements),
-        "pixels modifiés"
+        len(changements),
+        "octets"
     )
 
-total_changements = sum(
-    len(frame)
-    for frame in changements
-)
+    ancienne = nouvelle
+
+taille = len(donnees)
 
 print()
-print("Total changements :", total_changements)
+print("================================")
+print("RESULTAT")
+print("================================")
+print("Taille :", taille, "octets")
+print("Taille :", round(taille / 1024, 2), "Ko")
+print("================================")
+
+if taille > MAX_APPVAR:
+
+    print()
+    print("ATTENTION !")
+    print(
+        "Les données font",
+        taille,
+        "octets."
+    )
+
+    print(
+        "tivars ne pourra probablement",
+        "pas créer une seule AppVar."
+    )
+
+    print()
+    print(
+        "Réduis la résolution ou",
+        "le nombre de frames."
+    )
+
+    exit()
+
+print()
+print("Création de VIDEO.8xv...")
+
+
+appvar = TIAppVar(
+    name="VIDEO",
+    data=bytes(donnees)
+)
+
+appvar.save(
+    FICHIER_APPVAR,
+    model=TI_83PCE
+)
+
 
 print(
-    "Moyenne changements/frame :",
-    total_changements / len(changements)
+    "VIDEO.8xv créé !"
 )
 
-code = []
+"""
+Pour le moment, ce programme sert uniquement
+à vérifier que le .8xp est correctement généré.
 
-code.append("ClrDraw")
+Le lecteur vidéo sera ajouté ensuite.
+"""
 
-for numero_frame, frame in enumerate(changements):
+code = """
+ClrHome
+ClrDraw
+Disp "VIDEO PLAYER"
+Disp "DONNEES OK"
+Pause
+"""
 
-    for debut in range(0, len(frame), 999):
-
-        bloc = frame[debut:debut + 999]
-
-        positions = []
-
-        couleurs_bloc = []
-
-        for position, couleur in bloc:
-
-            positions.append(str(position))
-            couleurs_bloc.append(str(couleur))
-
-        code.append(
-            "{" + ",".join(positions) + "}→L1"
-        )
-
-        code.append(
-            "{" + ",".join(couleurs_bloc) + "}→L2"
-        )
-
-        code.append(
-            f"For(I,1,{len(bloc)})"
-        )
-
-        code.append(
-            "int(L1(I)/166)→A"
-        )
-
-        code.append(
-            "L1(I)-166A→B"
-        )
-
-        code.append(
-            "L2(I)→C"
-        )
-
-        code.append(
-            "Pxl-On(A+" +
-            str(OFFSET_Y) +
-            ",B+" +
-            str(OFFSET_X) +
-            ")"
-        )
-
-        code.append("End")
-
-    code.append("Pause .03")
+print()
+print("Création de VIDEO.8xp...")
 
 
-with open("VIDEO.txt", "w", encoding="utf-8") as fichier:
+programme = TIProgram(
+    code,
+    name="VIDEO"
+)
 
-    fichier.write("\n".join(code))
+programme.save(
+    FICHIER_PROGRAMME,
+    model=TI_83PCE
+)
 
 
 print()
 print("================================")
-print("Code TI-BASIC généré !")
-print("Fichier : VIDEO.txt")
+print("TERMINE")
 print("================================")
+print("Fichier programme :", FICHIER_PROGRAMME)
+print("Fichier données   :", FICHIER_APPVAR)
+print("================================")
+
