@@ -4,6 +4,11 @@ To launch the videos: transfer all files from "transfer_file" to the calculator,
 
 And to create your own video: run "main.py" with your video file (preferably in .mp4 format) located in the same folder. Then, once it's finished, transfer the VIDEO.8xv file to the calculator.
 
+For run the python file download :
+ffmpeg and 
+```python 
+pip install opencv-python tivars
+```
 
 Enjoy watching! ; )
 
